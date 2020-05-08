@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AsyncLock;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpsPolicy;
@@ -36,6 +37,8 @@ namespace WebApplication
             {
                 option.Configuration = "127.0.0.1:6379";
             });
+
+            services.AddSingleton<DistributedCacheWrapper>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

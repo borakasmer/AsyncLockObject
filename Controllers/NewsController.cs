@@ -19,11 +19,15 @@ namespace AsyncLock.Controllers
         private static readonly AsyncLock m_lock = new AsyncLock();
 
         //dotnet add package Microsoft.Extensions.Caching.Redis (For using IDistributedCache)
-        private readonly IDistributedCache _distributedCache;
+        //private readonly IDistributedCache _distributedCache;
+        private readonly DistributedCacheWrapper _cacheWrapper;
+
         public static List<News> model = new List<News>();
-        public NewsController(IDistributedCache distributedCache)
+        public NewsController(DistributedCacheWrapper cacheWrapper)
         {
-            _distributedCache = distributedCache;
+            //_distributedCache = distributedCache;
+            _cacheWrapper = cacheWrapper;
+
             if (model.Count == 0)
             {
                 model.AddRange(new News[]
@@ -65,9 +69,9 @@ namespace AsyncLock.Controllers
             string cacheKey = "AsyncNewsData";
             int cacheTime = 30;
             var allTasks = new List<Task<List<News>>>();
-            var client1 = AddRedisCache(model, cacheTime, cacheKey, "Client 1");
-            var client2 = AddRedisCache(model, cacheTime, cacheKey, "Client 2");
-            var client3 = AddRedisCache(model, cacheTime, cacheKey, "Client 3");
+            var client1 = AddRedisCache(cacheTime, cacheKey, "Client 1");
+            var client2 = AddRedisCache(cacheTime, cacheKey, "Client 2");
+            var client3 = AddRedisCache(cacheTime, cacheKey, "Client 3");
 
             allTasks.AddRange(new List<Task<List<News>>>() { client1, client2, client3 });
 
@@ -77,9 +81,12 @@ namespace AsyncLock.Controllers
             //return client1;
         }
 
-        public async Task<List<News>> AddRedisCache(List<News> allData, int cacheTime, string cacheKey, string sender = "", int errorValue = 2)
+        public async Task<List<News>> AddRedisCache(int cacheTime, string cacheKey, string sender = "", int errorValue = 2)
         {
-            //if (sender == "Client 3") { throw new Exception(); }
+            return await _cacheWrapper.GetOrSet<List<News>>(cacheKey, () => model, cacheTime, sender);
+
+            /*
+			//if (sender == "Client 3") { throw new Exception(); }
             var dataNews = await _distributedCache.GetAsync(cacheKey);
             if (dataNews == null)
             {
@@ -100,34 +107,9 @@ namespace AsyncLock.Controllers
             }
             var newsString = await _distributedCache.GetStringAsync(cacheKey);
             return JsonConvert.DeserializeObject<List<News>>(newsString);
-        }
+			*/
 
-        public sealed class AsyncLock
-        {
-            private readonly SemaphoreSlim m_semaphore = new SemaphoreSlim(1, 1);
-            private readonly Task<IDisposable> m_releaser;
 
-            public AsyncLock()
-            {
-                m_releaser = Task.FromResult((IDisposable)new Releaser(this));
-            }
-
-            public Task<IDisposable> LockAsync()
-            {
-                var wait = m_semaphore.WaitAsync();
-                return wait.IsCompleted ?
-                            m_releaser :
-                            wait.ContinueWith((_, state) => (IDisposable)state,
-                                m_releaser.Result, CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            }
-
-            private sealed class Releaser : IDisposable
-            {
-                private readonly AsyncLock m_toRelease;
-                internal Releaser(AsyncLock toRelease) { m_toRelease = toRelease; }
-                public void Dispose() { m_toRelease.m_semaphore.Release(); }
-            }
         }
     }
 }
